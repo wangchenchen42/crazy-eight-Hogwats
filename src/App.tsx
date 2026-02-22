@@ -336,6 +336,20 @@ export default function App() {
 
       {/* Main Game Area */}
       <main className="flex-1 relative flex flex-col items-center justify-between p-4 md:p-8">
+        {/* Message Banner */}
+        <div className="w-full max-w-md px-4 z-10 h-12 flex items-center justify-center">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={message}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="bg-black/40 backdrop-blur-md border border-[#EEBA30]/10 px-4 py-1.5 rounded-full text-center shadow-lg"
+            >
+              <p className="text-xs md:text-sm font-medium text-[#EEBA30]">{message}</p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
         
         {/* AI Hand */}
         <div className="w-full flex flex-col items-center gap-2">
@@ -423,20 +437,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Message Banner */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none w-full max-w-md px-4 z-10">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={message}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-black/80 backdrop-blur-md border border-[#EEBA30]/20 px-6 py-3 rounded-2xl text-center shadow-2xl"
-            >
-              <p className="text-sm md:text-base font-medium text-[#EEBA30]">{message}</p>
-            </motion.div>
-          </AnimatePresence>
-        </div>
 
         {/* Player Hand */}
         <div className="w-full flex flex-col items-center gap-4">
@@ -524,7 +524,7 @@ export default function App() {
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-20 p-6"
           >
             <div className="bg-[#1a0f0f] border border-[#EEBA30]/20 p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-6">
               <h3 className="text-2xl font-bold text-[#EEBA30]">选择一个学院</h3>
