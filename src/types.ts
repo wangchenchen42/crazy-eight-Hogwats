@@ -39,4 +39,6 @@ export interface GameState {
   winner: 'player' | 'ai' | null;
   activeSuit: Suit | null; // For when an 8 is played
   isSuitPicking: boolean;
+  mana: number; // 0 to 100
+  lastPlayer: 'player' | 'ai' | null;
 }

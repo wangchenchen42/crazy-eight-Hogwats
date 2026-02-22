@@ -18,6 +18,16 @@ export function createDeck(): Card[] {
       });
     }
   }
+  
+  // Add extra Dumbledore cards (Rank 8) to increase probability
+  for (const suit of SUITS) {
+    deck.push({
+      id: `extra-${Rank.EIGHT}-${suit}`,
+      suit,
+      rank: Rank.EIGHT,
+    });
+  }
+
   return shuffle(deck);
 }
 

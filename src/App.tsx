@@ -13,13 +13,24 @@ import {
   Layers, 
   ChevronRight,
   AlertCircle,
-  Info
+  Info,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { Suit, Rank, Card, GameState, GameStatus } from './types';
 import { createDeck, canPlayCard, SUITS } from './utils';
 
 const CARD_WIDTH = 100;
 const CARD_HEIGHT = 140;
+
+const AUDIO_URLS = {
+  bgm: 'https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a7391a.mp3',
+  play: 'https://assets.mixkit.co/active_storage/sfx/2019/card-flip-607.wav',
+  draw: 'https://assets.mixkit.co/active_storage/sfx/2019/card-slide-601.wav',
+  win: 'https://assets.mixkit.co/active_storage/sfx/2019/win-game-2039.wav',
+  lose: 'https://assets.mixkit.co/active_storage/sfx/2019/lose-game-2038.wav',
+  magic: 'https://assets.mixkit.co/active_storage/sfx/2019/magic-sparkle-190.wav',
+};
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>({
@@ -32,12 +43,45 @@ export default function App() {
     winner: null,
     activeSuit: null,
     isSuitPicking: false,
+    mana: 0,
+    lastPlayer: null,
   });
 
   const [message, setMessage] = useState<string>("欢迎来到霍格沃茨！准备好你的魔杖。");
+  const [isMuted, setIsMuted] = useState(false);
+  const [showHints, setShowHints] = useState(false);
+  const bgmRef = React.useRef<HTMLAudioElement | null>(null);
+
+  // Sound Player
+  const playSound = useCallback((type: keyof typeof AUDIO_URLS) => {
+    if (isMuted) return;
+    const audio = new Audio(AUDIO_URLS[type]);
+    audio.volume = type === 'bgm' ? 0.3 : 0.5;
+    audio.play().catch(() => {}); // Ignore autoplay blocks
+  }, [isMuted]);
+
+  // Handle BGM
+  useEffect(() => {
+    if (!bgmRef.current) {
+      bgmRef.current = new Audio(AUDIO_URLS.bgm);
+      bgmRef.current.loop = true;
+      bgmRef.current.volume = 0.2;
+    }
+
+    if (gameState.status === 'playing' && !isMuted) {
+      bgmRef.current.play().catch(() => {});
+    } else {
+      bgmRef.current.pause();
+    }
+
+    return () => {
+      bgmRef.current?.pause();
+    };
+  }, [gameState.status, isMuted]);
 
   // Initialize Game
   const startGame = useCallback(() => {
+    playSound('magic');
     const deck = createDeck();
     const playerHand = deck.splice(0, 8);
     const aiHand = deck.splice(0, 8);
@@ -57,6 +101,8 @@ export default function App() {
       winner: null,
       activeSuit: null,
       isSuitPicking: false,
+      mana: 0,
+      lastPlayer: null,
     });
     setMessage("轮到你了！施展你的咒语（出牌）。");
   }, []);
@@ -69,14 +115,16 @@ export default function App() {
   const checkWin = useCallback((state: GameState) => {
     if (state.playerHand.length === 0) {
       setGameState(prev => ({ ...prev, status: 'gameOver', winner: 'player' }));
+      playSound('win');
       return true;
     }
     if (state.aiHand.length === 0) {
       setGameState(prev => ({ ...prev, status: 'gameOver', winner: 'ai' }));
+      playSound('lose');
       return true;
     }
     return false;
-  }, []);
+  }, [playSound]);
 
   // AI Logic
   const executeAiTurn = useCallback(async () => {
@@ -92,11 +140,13 @@ export default function App() {
 
       if (playableCardIndex !== -1) {
         const card = prev.aiHand[playableCardIndex];
+        playSound('play');
         const newAiHand = [...prev.aiHand];
         newAiHand.splice(playableCardIndex, 1);
         
         let newActiveSuit = null;
         if (card.rank === Rank.EIGHT) {
+          playSound('magic');
           // AI picks the suit it has most of
           const suitCounts: Record<string, number> = {};
           newAiHand.forEach(c => {
@@ -114,6 +164,7 @@ export default function App() {
           discardPile: [...prev.discardPile, card],
           currentTurn: 'player' as const,
           activeSuit: newActiveSuit,
+          lastPlayer: 'ai' as const,
         };
 
         return newState;
@@ -161,13 +212,17 @@ export default function App() {
     }
 
     const newPlayerHand = gameState.playerHand.filter(c => c.id !== card.id);
+    playSound('play');
+    setShowHints(false); // Hide hints after playing
     
     if (card.rank === Rank.EIGHT) {
+      playSound('magic');
       setGameState(prev => ({
         ...prev,
         playerHand: newPlayerHand,
         discardPile: [...prev.discardPile, card],
         isSuitPicking: true,
+        lastPlayer: 'player',
       }));
       setMessage("你召唤了邓布利多 (🧙‍♂️)！请选择一个新的学院。");
     } else {
@@ -177,6 +232,8 @@ export default function App() {
         discardPile: [...prev.discardPile, card],
         currentTurn: 'ai',
         activeSuit: null,
+        mana: Math.min(100, prev.mana + 5), // Playing a card gives some mana
+        lastPlayer: 'player',
       }));
       setMessage(`你施展了 ${card.rank} (${getSuitName(card.suit)})。`);
     }
@@ -199,18 +256,30 @@ export default function App() {
     }
 
     const newDrawPile = [...gameState.drawPile];
-    const drawnCard = newDrawPile.pop()!;
+    let drawnCard = newDrawPile.pop()!;
+    playSound('draw');
     
+    // Mana system: if mana is 100, guarantee an 8
+    if (gameState.mana >= 100) {
+      playSound('magic');
+      drawnCard = { ...drawnCard, rank: Rank.EIGHT, id: `mana-boost-${drawnCard.id}` };
+      setMessage("邓布利多的力量觉醒了！你获得了一张万能牌。");
+    } else {
+      setMessage("你从魔力池抽取了一张牌。轮到伏地魔了。");
+    }
+
     setGameState(prev => ({
       ...prev,
       drawPile: newDrawPile,
       playerHand: [...prev.playerHand, drawnCard],
       currentTurn: 'ai',
+      mana: prev.mana >= 100 ? 0 : Math.min(100, prev.mana + 20), // Drawing gives more mana
     }));
-    setMessage("你从魔力池抽取了一张牌。轮到伏地魔了。");
+    setShowHints(false); // Hide hints after drawing
   };
 
   const pickSuit = (suit: Suit) => {
+    playSound('magic');
     setGameState(prev => ({
       ...prev,
       activeSuit: suit,
@@ -221,7 +290,7 @@ export default function App() {
   };
 
   // Rendering Helpers
-  const renderCard = (card: Card, isHidden: boolean = false, onClick?: () => void, isPlayable: boolean = false) => {
+  const renderCard = (card: Card, isHidden: boolean = false, onClick?: () => void, isPlayable: boolean = false, isHighlighted: boolean = false) => {
     const houseColors = getHouseColors(card.suit);
     
     return (
@@ -230,7 +299,7 @@ export default function App() {
         onClick={onClick}
         whileHover={onClick ? { y: -20, scale: 1.05 } : {}}
         className={`relative flex-shrink-0 cursor-pointer rounded-lg shadow-lg border-2 flex flex-col items-center justify-center
-          ${isPlayable ? 'border-yellow-400 ring-4 ring-yellow-400/30' : 'border-white/10'}
+          ${isHighlighted ? 'border-yellow-400 ring-4 ring-yellow-400/50 shadow-[0_0_15px_rgba(234,179,8,0.6)]' : 'border-white/10'}
           ${isHidden ? '' : 'bg-white'}
         `}
         style={{ 
@@ -321,6 +390,40 @@ export default function App() {
           <h1 className="text-2xl font-bold tracking-tight uppercase">霍格沃茨之疯狂八点</h1>
         </div>
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => {
+              setShowHints(!showHints);
+              if (!showHints) playSound('magic');
+            }}
+            className={`p-2 rounded-full transition-all flex items-center gap-2 px-3 text-xs font-bold uppercase tracking-wider border
+              ${showHints 
+                ? 'bg-[#EEBA30] text-[#740001] border-[#EEBA30] shadow-[0_0_10px_rgba(238,186,48,0.5)]' 
+                : 'bg-white/5 text-[#EEBA30] border-[#EEBA30]/20 hover:bg-white/10'}
+            `}
+            title="提示合法卡牌"
+          >
+            <Info size={16} />
+            <span className="hidden md:inline">提示</span>
+          </button>
+          <button 
+            onClick={() => setIsMuted(!isMuted)}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors text-[#EEBA30]"
+            title={isMuted ? "取消静音" : "静音"}
+          >
+            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+          </button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest opacity-50">
+              魔力值 ({gameState.mana}%)
+            </div>
+            <div className="w-32 h-1.5 bg-white/10 rounded-full overflow-hidden border border-white/5">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-yellow-600 to-yellow-400 shadow-[0_0_8px_rgba(234,179,8,0.5)]"
+                initial={{ width: 0 }}
+                animate={{ width: `${gameState.mana}%` }}
+              />
+            </div>
+          </div>
           <div className="bg-black/30 px-3 py-1 rounded-full text-sm font-mono flex items-center gap-2 border border-[#EEBA30]/10">
             <span className="opacity-50">魔力池:</span> {gameState.drawPile.length}
           </div>
@@ -355,6 +458,15 @@ export default function App() {
         <div className="w-full flex flex-col items-center gap-2">
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest opacity-50">
             <AlertCircle size={12} /> 伏地魔 ({gameState.aiHand.length} 张咒语)
+            {gameState.currentTurn === 'ai' && (
+              <motion.span 
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="ml-2 text-[10px] text-[#EEBA30] italic"
+              >
+                正在思考咒语...
+              </motion.span>
+            )}
           </div>
           <div className="flex justify-center -space-x-12 md:-space-x-16 h-36">
             <AnimatePresence>
@@ -410,17 +522,23 @@ export default function App() {
             <div className="text-[10px] uppercase tracking-tighter opacity-40">弃牌堆</div>
             <div className="relative w-[100px] h-[140px]">
               <AnimatePresence mode="popLayout">
-                {gameState.discardPile.slice(-3).map((card, i) => (
-                  <motion.div
-                    key={card.id}
-                    initial={{ scale: 0.8, opacity: 0, rotate: Math.random() * 20 - 10 }}
-                    animate={{ scale: 1, opacity: 1, rotate: Math.random() * 10 - 5 }}
-                    className="absolute inset-0"
-                    style={{ zIndex: i }}
-                  >
-                    {renderCard(card)}
-                  </motion.div>
-                ))}
+                {gameState.discardPile.slice(-3).map((card, i, arr) => {
+                  const isLastCard = i === arr.length - 1;
+                  const initialY = gameState.lastPlayer === 'ai' ? -300 : 300;
+                  
+                  return (
+                    <motion.div
+                      key={card.id}
+                      initial={isLastCard ? { y: initialY, opacity: 0, rotate: 0, scale: 1.2 } : { scale: 0.8, opacity: 0 }}
+                      animate={{ y: 0, scale: 1, opacity: 1, rotate: Math.random() * 10 - 5 }}
+                      transition={{ type: "spring", damping: 15, stiffness: 100 }}
+                      className="absolute inset-0"
+                      style={{ zIndex: i }}
+                    >
+                      {renderCard(card)}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
               
               {/* Active Suit Indicator */}
@@ -462,7 +580,8 @@ export default function App() {
                         card, 
                         false, 
                         () => playCard(card),
-                        isPlayable
+                        isPlayable,
+                        showHints && isPlayable
                       )}
                     </motion.div>
                   );
